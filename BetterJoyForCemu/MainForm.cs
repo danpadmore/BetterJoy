@@ -103,7 +103,7 @@ namespace BetterJoyForCemu {
             passiveScanBox.Checked = Config.IntValue("ProgressiveScan") == 1;
             startInTrayBox.Checked = Config.IntValue("StartInTray") == 1;
 
-            if (Config.IntValue("StartInTray") == 1) {
+            if (Program.ForceStartInTray || Config.IntValue("StartInTray") == 1) {
                 HideToTray();
             } else {
                 ShowFromTray();
@@ -260,6 +260,10 @@ namespace BetterJoyForCemu {
         }
 
         void ReenableViGEm(Joycon v) {
+            if (!Program.EnsureEmClient()) {
+                return;
+            }
+
             if (showAsXInput && v.out_xbox == null) {
                 v.out_xbox = new Controller.OutputControllerXbox360();
 

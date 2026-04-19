@@ -93,6 +93,7 @@ namespace BetterJoyForCemu {
 
         void CheckForNewControllersTime(Object source, ElapsedEventArgs e) {
             CleanUp();
+            Program.EnsureVirtualOutputsForConnectedControllers();
             if (Config.IntValue("ProgressiveScan") == 1) {
                 CheckForNewControllers();
             }
@@ -199,7 +200,7 @@ namespace BetterJoyForCemu {
                     bool isPro = prod_id == product_pro;
                     bool isSnes = prod_id == product_snes;
                     bool is64 = prod_id == product_n64;
-                    j.Add(new Joycon(handle, EnableIMU, EnableLocalize & EnableIMU, 0.05f, isLeft, enumerate.path, enumerate.serial_number, j.Count, isPro, isSnes, is64,thirdParty != null));
+                    j.Add(new Joycon(handle, EnableIMU, EnableLocalize & EnableIMU, 0.05f, isLeft, enumerate.path, enumerate.serial_number, j.Count, isPro, isSnes, is64, thirdParty != null));
 
                     foundNew = true;
                     j.Last().form = form;
@@ -361,6 +362,7 @@ namespace BetterJoyForCemu {
         static string pid;
 
         static MainForm form;
+        public static bool ForceStartInTray = false;
 
         static public bool useHIDG = Boolean.Parse(ConfigurationManager.AppSettings["UseHIDG"]);
 
@@ -368,6 +370,65 @@ namespace BetterJoyForCemu {
 
         private static WindowsInput.Events.Sources.IKeyboardEventSource keyboard;
         private static WindowsInput.Events.Sources.IMouseEventSource mouse;
+
+        private static bool WantsVirtualControllers() {
+            return Boolean.Parse(ConfigurationManager.AppSettings["ShowAsXInput"]) || Boolean.Parse(ConfigurationManager.AppSettings["ShowAsDS4"]);
+        }
+
+        public static bool EnsureEmClient() {
+            if (!WantsVirtualControllers())
+                return true;
+
+            if (emClient != null)
+                return true;
+
+            try {
+                emClient = new ViGEmClient(); // Manages emulated controllers
+                form.console.AppendText("Connected to ViGEmBus.\r\n");
+                return true;
+            } catch (Nefarius.ViGEm.Client.Exceptions.VigemBusNotFoundException) {
+                form.console.AppendText("Could not start VigemBus. Make sure drivers are installed correctly.\r\n");
+                return false;
+            } catch (Exception ex) {
+                form.console.AppendText("Could not initialize ViGEmBus: " + ex.Message + "\r\n");
+                return false;
+            }
+        }
+
+        public static void EnsureVirtualOutputsForConnectedControllers() {
+            if (mgr == null || mgr.j == null)
+                return;
+
+            bool showAsXInput = Boolean.Parse(ConfigurationManager.AppSettings["ShowAsXInput"]);
+            bool showAsDS4 = Boolean.Parse(ConfigurationManager.AppSettings["ShowAsDS4"]);
+            bool toRumble = Boolean.Parse(ConfigurationManager.AppSettings["EnableRumble"]);
+
+            if (!showAsXInput && !showAsDS4)
+                return;
+
+            if (!EnsureEmClient())
+                return;
+
+            foreach (Joycon v in mgr.j) {
+                if (showAsXInput && v.out_xbox == null) {
+                    try {
+                        v.out_xbox = new Controller.OutputControllerXbox360();
+                        if (toRumble)
+                            v.out_xbox.FeedbackReceived += v.ReceiveRumble;
+                        v.out_xbox.Connect();
+                    } catch { }
+                }
+
+                if (showAsDS4 && v.out_ds4 == null) {
+                    try {
+                        v.out_ds4 = new Controller.OutputControllerDualShock4();
+                        if (toRumble)
+                            v.out_ds4.FeedbackReceived += v.Ds4_FeedbackReceived;
+                        v.out_ds4.Connect();
+                    } catch { }
+                }
+            }
+        }
 
         public static void Start() {
             pid = Process.GetCurrentProcess().Id.ToString(); // get current process id for HidCerberus.Srv
@@ -409,13 +470,7 @@ namespace BetterJoyForCemu {
                 }
             }
 
-            if (Boolean.Parse(ConfigurationManager.AppSettings["ShowAsXInput"]) || Boolean.Parse(ConfigurationManager.AppSettings["ShowAsDS4"])) {
-                try {
-                    emClient = new ViGEmClient(); // Manages emulated XInput
-                } catch (Nefarius.ViGEm.Client.Exceptions.VigemBusNotFoundException) {
-                    form.console.AppendText("Could not start VigemBus. Make sure drivers are installed correctly.\r\n");
-                }
-            }
+            EnsureEmClient();
 
             foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces()) {
                 // Get local BT host MAC
@@ -434,6 +489,7 @@ namespace BetterJoyForCemu {
             mgr.form = form;
             mgr.Awake();
             mgr.CheckForNewControllers();
+            EnsureVirtualOutputsForConnectedControllers();
             mgr.Start();
 
             server = new UdpServer(mgr.j);
@@ -518,6 +574,9 @@ namespace BetterJoyForCemu {
 
         private static string appGuid = "1bf709e9-c133-41df-933a-c9ff3f664c7b"; // randomly-generated
         static void Main(string[] args) {
+
+            ForceStartInTray = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase)
+                || a.Equals("/tray", StringComparison.OrdinalIgnoreCase));
 
             // Setting the culturesettings so float gets parsed correctly
             CultureInfo.CurrentCulture = new CultureInfo("en-US", false);

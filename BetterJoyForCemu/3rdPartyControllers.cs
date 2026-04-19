@@ -51,10 +51,20 @@ namespace BetterJoyForCemu {
         }
 
         static readonly string path;
+        static readonly string legacyPath;
 
         static _3rdPartyControllers() {
-            path = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
-                   + "\\3rdPartyControllers";
+            string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterJoy");
+            Directory.CreateDirectory(appDataDir);
+
+            path = Path.Combine(appDataDir, "3rdPartyControllers");
+            legacyPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "3rdPartyControllers");
+
+            if (!File.Exists(path) && File.Exists(legacyPath)) {
+                try {
+                    File.Copy(legacyPath, path);
+                } catch { }
+            }
         }
 
         public _3rdPartyControllers() {
@@ -120,11 +130,11 @@ namespace BetterJoyForCemu {
                 }
 
                 // TODO: try checking against interface number instead
-                String name = enumerate.product_string + '(' + enumerate.vendor_id + '-' + enumerate.product_id + '-'+enumerate.serial_number+')';
+                String name = enumerate.product_string + '(' + enumerate.vendor_id + '-' + enumerate.product_id + '-' + enumerate.serial_number + ')';
                 if (!ContainsText(list_customControllers, name) && !ContainsText(list_allControllers, name)) {
                     list_allControllers.Items.Add(new SController(name, enumerate.vendor_id, enumerate.product_id, 0, enumerate.serial_number));
                     // 0 type is undefined
-                    Console.WriteLine("Found controller "+ name);
+                    Console.WriteLine("Found controller " + name);
                 }
 
                 ptr = enumerate.next;

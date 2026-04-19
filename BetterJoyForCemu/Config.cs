@@ -5,13 +5,24 @@ using System.IO;
 namespace BetterJoyForCemu {
 	public static class Config { // stores dynamic configuration, including
 		static readonly string path;
+		static readonly string legacyPath;
 		static Dictionary<string, string> variables = new Dictionary<string, string>();
 
 		const int settingsNum = 11; // currently - ProgressiveScan, StartInTray + special buttons
 
-        static Config() {
-            path = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + "\\settings";
-        }
+		static Config() {
+			string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BetterJoy");
+			Directory.CreateDirectory(appDataDir);
+
+			path = Path.Combine(appDataDir, "settings");
+			legacyPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "settings");
+
+			if (!File.Exists(path) && File.Exists(legacyPath)) {
+				try {
+					File.Copy(legacyPath, path);
+				} catch { }
+			}
+		}
 
 		public static string GetDefaultValue(string s) {
 			switch (s) {
@@ -125,8 +136,8 @@ namespace BetterJoyForCemu {
 				if (i == 0) space = "";
 				caliStr += space + caliData[i].Key + "," + String.Join(",", caliData[i].Value);
 			}
-            txt[settingsNum] = caliStr;
-            File.WriteAllLines(path, txt);
+			txt[settingsNum] = caliStr;
+			File.WriteAllLines(path, txt);
 		}
 
 		public static void Save() {
