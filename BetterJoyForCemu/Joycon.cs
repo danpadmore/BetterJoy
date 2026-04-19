@@ -314,13 +314,13 @@ namespace BetterJoyForCemu {
 
             connection = isUSB ? 0x01 : 0x02;
 
-            if (showAsXInput) {
+            if (showAsXInput && Program.EnsureEmClient()) {
                 out_xbox = new OutputControllerXbox360();
                 if (toRumble)
                     out_xbox.FeedbackReceived += ReceiveRumble;
             }
 
-            if (showAsDS4) {
+            if (showAsDS4 && Program.EnsureEmClient()) {
                 out_ds4 = new OutputControllerDualShock4();
                 if (toRumble)
                     out_ds4.FeedbackReceived += Ds4_FeedbackReceived;
@@ -510,7 +510,7 @@ namespace BetterJoyForCemu {
 
             if (battery <= 1) {
                 form.notifyIcon.Visible = true;
-                form.notifyIcon.BalloonTipText = String.Format("Controller {0} ({1}) - low battery notification!", PadId, isPro ? "Pro Controller" : (isSnes ? "SNES Controller" : (is64? "N64 Controller" : (isLeft ? "Joycon Left" : "Joycon Right"))));
+                form.notifyIcon.BalloonTipText = String.Format("Controller {0} ({1}) - low battery notification!", PadId, isPro ? "Pro Controller" : (isSnes ? "SNES Controller" : (is64 ? "N64 Controller" : (isLeft ? "Joycon Left" : "Joycon Right"))));
                 form.notifyIcon.ShowBalloonTip(0);
             }
         }
@@ -1151,6 +1151,19 @@ namespace BetterJoyForCemu {
             return (byte)Math.Max(Byte.MinValue, Math.Min(Byte.MaxValue, 127 - stick_value * Byte.MaxValue));
         }
 
+        private static float GetOutputStickDeadzone() {
+            float deadzone;
+            if (!float.TryParse(ConfigurationManager.AppSettings["OutputStickDeadzone"], out deadzone)) {
+                deadzone = 0.08f;
+            }
+
+            return Math.Max(0.0f, Math.Min(0.5f, deadzone));
+        }
+
+        private static float ApplyOutputDeadzone(float value, float deadzone) {
+            return Math.Abs(value) < deadzone ? 0.0f : value;
+        }
+
         public void SetRumble(float low_freq, float high_freq, float amp) {
             if (state <= Joycon.state_.ATTACHED) return;
             rumble_obj.set_vals(low_freq, high_freq, amp);
@@ -1177,7 +1190,8 @@ namespace BetterJoyForCemu {
             buf_[0] = 0x1;
             if (global_count == 0xf) global_count = 0;
             else ++global_count;
-            if (print) { PrintArray(buf_, DebugType.COMMS, len, 11, "Subcommand 0x" + string.Format("{0:X2}", sc) + " sent. Data: 0x{0:S}"); };
+            if (print) { PrintArray(buf_, DebugType.COMMS, len, 11, "Subcommand 0x" + string.Format("{0:X2}", sc) + " sent. Data: 0x{0:S}"); }
+            ;
             HIDapi.hid_write(handle, buf_, new UIntPtr(len + 11));
             int tries = 0;
             do {
@@ -1336,85 +1350,74 @@ namespace BetterJoyForCemu {
         }
 
 
-        private static float GetNormalizedValue(float value, float rawMin, float rawMax, float normalizedMin, float normalizedMax)
-        {
+        private static float GetNormalizedValue(float value, float rawMin, float rawMax, float normalizedMin, float normalizedMax) {
             return (value - rawMin) / (rawMax - rawMin) * (normalizedMax - normalizedMin) + normalizedMin;
         }
 
-        private static float[] Getn64StickValues(Joycon input)
-        {
+        private static float[] Getn64StickValues(Joycon input) {
             var isLeft = input.isLeft;
             var other = input.other;
             var stick = input.stick;
             var stick2 = input.stick2;
-            var stick_correction = new float[] { 0f, 0f};
+            var stick_correction = new float[] { 0f, 0f };
 
             var xAxis = (other == input && !isLeft) ? stick2[0] : stick[0];
             var yAxis = (other == input && !isLeft) ? stick2[1] : stick[1];
 
 
-            if (xAxis < input.minX)
-            {
+            if (xAxis < input.minX) {
                 input.minX = xAxis;
             }
 
-            if (xAxis > input.maxX)
-            {
+            if (xAxis > input.maxX) {
                 input.maxX = xAxis;
             }
 
-            if (yAxis < input.minY)
-            {
+            if (yAxis < input.minY) {
                 input.minY = yAxis;
             }
 
-            if (yAxis > input.maxY)
-            {
+            if (yAxis > input.maxY) {
                 input.maxY = yAxis;
             }
 
-            var middleX = (input.minX + (input.maxX - input.minX)/2);
-            var middleY = (input.minY + (input.maxY - input.minY)/2);
-            #if DEBUG
+            var middleX = (input.minX + (input.maxX - input.minX) / 2);
+            var middleY = (input.minY + (input.maxY - input.minY) / 2);
+#if DEBUG
             var desc = "";
             desc += "x: "+xAxis+"; y: "+yAxis;
             desc += "\n X: ["+input.minX+", "+input.maxX+"]; Y: ["+input.minY+", "+input.maxY+"] ";
             desc += "; middle ["+middleX+", "+middleY+"]";
                 
             Debug.WriteLine(desc);
-            #endif
+#endif
 
-            var negative_normalized = new float[] {-1, 0};
-            var positive_normalized = new float[] {0, 1};
+            var negative_normalized = new float[] { -1, 0 };
+            var positive_normalized = new float[] { 0, 1 };
 
-            var xRange = new float[] {-1f, 1f};
-            var yRange = new float[] {-1f, 1f};
+            var xRange = new float[] { -1f, 1f };
+            var yRange = new float[] { -1f, 1f };
 
-            if (input.realn64Range)
-            {
-                xRange = new float[] {-0.79f, 0.79f};
-                yRange = new float[] {-0.79f, 0.79f};
+            if (input.realn64Range) {
+                xRange = new float[] { -0.79f, 0.79f };
+                yRange = new float[] { -0.79f, 0.79f };
             }
-            
 
-            if (xAxis < (middleX - middleX))
-            {
+
+            if (xAxis < (middleX - middleX)) {
                 stick_correction[0] = GetNormalizedValue(xAxis, input.minX, (middleX - middleX), xRange[0], 0f);
             }
 
-            if (xAxis > (middleX+middleX))
-            {
-                stick_correction[0] = GetNormalizedValue(xAxis, (middleX+middleX), input.maxX, 0f, xRange[1]);
+            if (xAxis > (middleX + middleX)) {
+                stick_correction[0] = GetNormalizedValue(xAxis, (middleX + middleX), input.maxX, 0f, xRange[1]);
             }
 
-            if (yAxis < (middleY-middleY))
-            {
-                stick_correction[1] = GetNormalizedValue(yAxis, input.minY, (middleY-middleY), yRange[0], 0f);
+            if (yAxis < (middleY - middleY)) {
+                stick_correction[1] = GetNormalizedValue(yAxis, input.minY, (middleY - middleY), yRange[0], 0f);
             }
 
-            if (yAxis > (middleY+middleY))
-            {
-                stick_correction[1] = GetNormalizedValue(yAxis, (middleY+middleY), input.maxY, 0f, yRange[1]);
+            if (yAxis > (middleY + middleY)) {
+                stick_correction[1] = GetNormalizedValue(yAxis, (middleY + middleY), input.maxY, 0f, yRange[1]);
             }
 
 
@@ -1423,6 +1426,7 @@ namespace BetterJoyForCemu {
 
         private static OutputControllerXbox360InputState MapToXbox360Input(Joycon input) {
             var output = new OutputControllerXbox360InputState();
+            var outputStickDeadzone = GetOutputStickDeadzone();
 
 
             var swapAB = input.swapAB;
@@ -1440,10 +1444,9 @@ namespace BetterJoyForCemu {
             var stick2 = input.stick2;
             var sliderVal = input.sliderVal;
 
-            if (is64)
-            {
-                output.axis_right_x = (short) ((buttons[(int)Button.X] ? Int16.MinValue : 0) + (buttons[(int)Button.MINUS] ? Int16.MaxValue : 0));
-                output.axis_right_y = (short) ((buttons[(int)Button.SHOULDER2_2] ? Int16.MinValue: 0) + (buttons[(int)Button.Y] ? Int16.MaxValue: 0));
+            if (is64) {
+                output.axis_right_x = (short)((buttons[(int)Button.X] ? Int16.MinValue : 0) + (buttons[(int)Button.MINUS] ? Int16.MaxValue : 0));
+                output.axis_right_y = (short)((buttons[(int)Button.SHOULDER2_2] ? Int16.MinValue : 0) + (buttons[(int)Button.Y] ? Int16.MaxValue : 0));
 
                 var n64Stick = Getn64StickValues(input);
 
@@ -1466,8 +1469,7 @@ namespace BetterJoyForCemu {
                 output.dpad_up = buttons[(int)Button.DPAD_UP];
                 output.guide = buttons[(int)Button.HOME];
 
-            }
-            else if (isPro) {
+            } else if (isPro) {
                 output.a = buttons[(int)(!swapAB ? Button.B : Button.A)];
                 output.b = buttons[(int)(!swapAB ? Button.A : Button.B)];
                 output.y = buttons[(int)(!swapXY ? Button.X : Button.Y)];
@@ -1530,19 +1532,18 @@ namespace BetterJoyForCemu {
 
             if (!(isSnes || is64)) {
                 if (other != null || isPro) { // no need for && other != this
-                    output.axis_left_x = CastStickValue((other == input && !isLeft) ? stick2[0] : stick[0]);
-                    output.axis_left_y = CastStickValue((other == input && !isLeft) ? stick2[1] : stick[1]);
+                    output.axis_left_x = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick2[0] : stick[0], outputStickDeadzone));
+                    output.axis_left_y = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick2[1] : stick[1], outputStickDeadzone));
 
-                    output.axis_right_x = CastStickValue((other == input && !isLeft) ? stick[0] : stick2[0]);
-                    output.axis_right_y = CastStickValue((other == input && !isLeft) ? stick[1] : stick2[1]);
+                    output.axis_right_x = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick[0] : stick2[0], outputStickDeadzone));
+                    output.axis_right_y = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick[1] : stick2[1], outputStickDeadzone));
                 } else { // single joycon mode
-                    output.axis_left_y = CastStickValue((isLeft ? 1 : -1) * stick[0]);
-                    output.axis_left_x = CastStickValue((isLeft ? -1 : 1) * stick[1]);
+                    output.axis_left_y = CastStickValue(ApplyOutputDeadzone((isLeft ? 1 : -1) * stick[0], outputStickDeadzone));
+                    output.axis_left_x = CastStickValue(ApplyOutputDeadzone((isLeft ? -1 : 1) * stick[1], outputStickDeadzone));
                 }
             }
 
-            if (!is64)
-            {
+            if (!is64) {
                 if (other != null || isPro) {
                     byte lval = GyroAnalogSliders ? sliderVal[0] : Byte.MaxValue;
                     byte rval = GyroAnalogSliders ? sliderVal[1] : Byte.MaxValue;
@@ -1575,10 +1576,9 @@ namespace BetterJoyForCemu {
             var stick2 = input.stick2;
             var sliderVal = input.sliderVal;
 
-            if (is64)
-            {
-                output.thumb_right_x = (byte) ((buttons[(int)Button.X] ? Byte.MinValue : 0) + (buttons[(int)Button.MINUS] ? Byte.MaxValue : 0));
-                output.thumb_right_y = (byte) ((buttons[(int)Button.SHOULDER2_2] ? Byte.MinValue: 0) + (buttons[(int)Button.Y] ? Byte.MaxValue: 0));
+            if (is64) {
+                output.thumb_right_x = (byte)((buttons[(int)Button.X] ? Byte.MinValue : 0) + (buttons[(int)Button.MINUS] ? Byte.MaxValue : 0));
+                output.thumb_right_y = (byte)((buttons[(int)Button.SHOULDER2_2] ? Byte.MinValue : 0) + (buttons[(int)Button.Y] ? Byte.MaxValue : 0));
 
                 output.thumb_left_x = CastStickValueByte((other == input && !isLeft) ? -stick2[0] : -stick[0]);
                 output.thumb_left_y = CastStickValueByte((other == input && !isLeft) ? stick2[1] : stick[1]);
@@ -1613,7 +1613,7 @@ namespace BetterJoyForCemu {
                 } else if (buttons[(int)Button.DPAD_LEFT])
                     output.dPad = DpadDirection.West;
                 else if (buttons[(int)Button.DPAD_RIGHT])
-                    output.dPad = DpadDirection.East;                
+                    output.dPad = DpadDirection.East;
             }
 
             if (isPro) {
@@ -1716,8 +1716,7 @@ namespace BetterJoyForCemu {
                 }
             }
 
-            if (!is64)
-            {
+            if (!is64) {
                 if (other != null || isPro) {
                     byte lval = GyroAnalogSliders ? sliderVal[0] : Byte.MaxValue;
                     byte rval = GyroAnalogSliders ? sliderVal[1] : Byte.MaxValue;
@@ -1727,9 +1726,9 @@ namespace BetterJoyForCemu {
                     output.trigger_left_value = (byte)(buttons[(int)(isLeft ? Button.SHOULDER_2 : Button.SHOULDER_1)] ? Byte.MaxValue : 0);
                     output.trigger_right_value = (byte)(buttons[(int)(isLeft ? Button.SHOULDER_1 : Button.SHOULDER_2)] ? Byte.MaxValue : 0);
                 }
-            // Output digital L2 / R2 in addition to analog L2 / R2
-            output.trigger_left = output.trigger_left_value > 0 ? output.trigger_left = true : output.trigger_left = false;
-            output.trigger_right = output.trigger_right_value > 0 ? output.trigger_right = true : output.trigger_right = false;
+                // Output digital L2 / R2 in addition to analog L2 / R2
+                output.trigger_left = output.trigger_left_value > 0 ? output.trigger_left = true : output.trigger_left = false;
+                output.trigger_right = output.trigger_right_value > 0 ? output.trigger_right = true : output.trigger_right = false;
             }
 
             return output;

@@ -69,6 +69,27 @@ if (-not (Test-Path -Path $deployedExe -PathType Leaf)) {
     throw "Deployment failed. Expected executable at: $deployedExe"
 }
 
+$deployedConfig = "$deployedExe.config"
+if (Test-Path -Path $deployedConfig -PathType Leaf) {
+    [xml]$cfg = Get-Content -Path $deployedConfig
+    $appSettings = $cfg.configuration.appSettings
+    if ($null -eq $appSettings) {
+        throw "Invalid config format: missing appSettings in $deployedConfig"
+    }
+
+    $existing = $appSettings.add | Where-Object { $_.key -eq "OutputStickDeadzone" }
+    if ($existing) {
+        $existing.value = "0.08"
+    } else {
+        $newNode = $cfg.CreateElement("add")
+        $newNode.SetAttribute("key", "OutputStickDeadzone")
+        $newNode.SetAttribute("value", "0.08")
+        $null = $appSettings.AppendChild($newNode)
+    }
+
+    $cfg.Save($deployedConfig)
+}
+
 $taskName = "BetterJoy AutoStart (All Users)"
 $taskPath = "\BetterJoy\"
 
