@@ -77,14 +77,21 @@ if (Test-Path -Path $deployedConfig -PathType Leaf) {
         throw "Invalid config format: missing appSettings in $deployedConfig"
     }
 
-    $existing = $appSettings.add | Where-Object { $_.key -eq "OutputStickDeadzone" }
-    if ($existing) {
-        $existing.value = "0.08"
-    } else {
-        $newNode = $cfg.CreateElement("add")
-        $newNode.SetAttribute("key", "OutputStickDeadzone")
-        $newNode.SetAttribute("value", "0.08")
-        $null = $appSettings.AppendChild($newNode)
+    $deadzoneDefaults = @{
+        OutputStickDeadzone = "0.08"
+        OutputStickDeadzoneRight = "0.12"
+    }
+
+    foreach ($entry in $deadzoneDefaults.GetEnumerator()) {
+        $existing = $appSettings.add | Where-Object { $_.key -eq $entry.Key }
+        if ($existing) {
+            $existing.value = $entry.Value
+        } else {
+            $newNode = $cfg.CreateElement("add")
+            $newNode.SetAttribute("key", $entry.Key)
+            $newNode.SetAttribute("value", $entry.Value)
+            $null = $appSettings.AppendChild($newNode)
+        }
     }
 
     $cfg.Save($deployedConfig)

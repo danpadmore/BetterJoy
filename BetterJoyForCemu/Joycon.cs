@@ -1151,17 +1151,24 @@ namespace BetterJoyForCemu {
             return (byte)Math.Max(Byte.MinValue, Math.Min(Byte.MaxValue, 127 - stick_value * Byte.MaxValue));
         }
 
-        private static float GetOutputStickDeadzone() {
+        private static float ReadOutputStickDeadzone(string key, float fallback) {
             float deadzone;
-            if (!float.TryParse(ConfigurationManager.AppSettings["OutputStickDeadzone"], out deadzone)) {
-                deadzone = 0.08f;
+            if (!float.TryParse(ConfigurationManager.AppSettings[key], out deadzone)) {
+                deadzone = fallback;
             }
 
             return Math.Max(0.0f, Math.Min(0.5f, deadzone));
         }
 
-        private static float ApplyOutputDeadzone(float value, float deadzone) {
-            return Math.Abs(value) < deadzone ? 0.0f : value;
+        private static void ApplyOutputDeadzone2D(ref float x, ref float y, float deadzone) {
+            if (deadzone <= 0.0f)
+                return;
+
+            float magnitude = (float)Math.Sqrt(x * x + y * y);
+            if (magnitude < deadzone) {
+                x = 0.0f;
+                y = 0.0f;
+            }
         }
 
         public void SetRumble(float low_freq, float high_freq, float amp) {
@@ -1426,7 +1433,8 @@ namespace BetterJoyForCemu {
 
         private static OutputControllerXbox360InputState MapToXbox360Input(Joycon input) {
             var output = new OutputControllerXbox360InputState();
-            var outputStickDeadzone = GetOutputStickDeadzone();
+            var outputStickDeadzoneLeft = ReadOutputStickDeadzone("OutputStickDeadzone", 0.08f);
+            var outputStickDeadzoneRight = ReadOutputStickDeadzone("OutputStickDeadzoneRight", outputStickDeadzoneLeft);
 
 
             var swapAB = input.swapAB;
@@ -1532,14 +1540,25 @@ namespace BetterJoyForCemu {
 
             if (!(isSnes || is64)) {
                 if (other != null || isPro) { // no need for && other != this
-                    output.axis_left_x = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick2[0] : stick[0], outputStickDeadzone));
-                    output.axis_left_y = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick2[1] : stick[1], outputStickDeadzone));
+                    float leftX = (other == input && !isLeft) ? stick2[0] : stick[0];
+                    float leftY = (other == input && !isLeft) ? stick2[1] : stick[1];
+                    float rightX = (other == input && !isLeft) ? stick[0] : stick2[0];
+                    float rightY = (other == input && !isLeft) ? stick[1] : stick2[1];
 
-                    output.axis_right_x = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick[0] : stick2[0], outputStickDeadzone));
-                    output.axis_right_y = CastStickValue(ApplyOutputDeadzone((other == input && !isLeft) ? stick[1] : stick2[1], outputStickDeadzone));
+                    ApplyOutputDeadzone2D(ref leftX, ref leftY, outputStickDeadzoneLeft);
+                    ApplyOutputDeadzone2D(ref rightX, ref rightY, outputStickDeadzoneRight);
+
+                    output.axis_left_x = CastStickValue(leftX);
+                    output.axis_left_y = CastStickValue(leftY);
+                    output.axis_right_x = CastStickValue(rightX);
+                    output.axis_right_y = CastStickValue(rightY);
                 } else { // single joycon mode
-                    output.axis_left_y = CastStickValue(ApplyOutputDeadzone((isLeft ? 1 : -1) * stick[0], outputStickDeadzone));
-                    output.axis_left_x = CastStickValue(ApplyOutputDeadzone((isLeft ? -1 : 1) * stick[1], outputStickDeadzone));
+                    float leftY = (isLeft ? 1 : -1) * stick[0];
+                    float leftX = (isLeft ? -1 : 1) * stick[1];
+                    ApplyOutputDeadzone2D(ref leftX, ref leftY, outputStickDeadzoneLeft);
+
+                    output.axis_left_y = CastStickValue(leftY);
+                    output.axis_left_x = CastStickValue(leftX);
                 }
             }
 
